@@ -6,6 +6,9 @@ A Machine Learning project using Logistic Regression
 to analyze smartphone usage patterns and estimate
 the risk of excessive smartphone usage.
 
+🔗 Submission Link
+Clickable Submission Link: https://github.com/complexiota
+
 ## Features
 - Daily screen time analysis
 - Night-time usage analysis
