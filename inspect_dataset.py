@@ -61,7 +61,7 @@ print(df["addicted"].value_counts(dropna=False))
 print("\n========== CLASS PERCENTAGE ==========")
 print(df["addicted"].value_counts(normalize=True) * 100)
 
-# 12. Target data type
+# 12. Target data typeSmartphone Usage and Digital Addiction Dataset
 print("\n========== TARGET INFORMATION ==========")
 print(df["addicted"].dtype)
 print("Unique target values:", df["addicted"].unique())

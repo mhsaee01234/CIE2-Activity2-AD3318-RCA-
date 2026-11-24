@@ -7,6 +7,7 @@ import os
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.dummy import DummyClassifier
+
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -19,8 +20,6 @@ from sklearn.metrics import (
     log_loss
 )
 
-from sklearn.preprocessing import StandardScaler
-
 # =====================================================
 # 1. CREATE OUTPUT FOLDERS
 # =====================================================
@@ -31,6 +30,8 @@ os.makedirs("outputs", exist_ok=True)
 # =====================================================
 # 2. LOAD PROCESSED DATA
 # =====================================================
+
+print("\nLoading processed dataset...")
 
 X_train = pd.read_csv("data/processed/X_train.csv")
 X_test = pd.read_csv("data/processed/X_test.csv")
@@ -43,21 +44,43 @@ y_test = pd.read_csv(
     "data/processed/y_test.csv"
 ).squeeze()
 
+# Check feature consistency
+if list(X_train.columns) != list(X_test.columns):
+    raise ValueError("Training and testing features do not match.")
+
+if y_train.nunique() < 2:
+    raise ValueError("Training data must contain both classes.")
+
+if y_test.nunique() < 2:
+    raise ValueError("Testing data must contain both classes.")
+
 # =====================================================
-# 3. SCALE DATA
+# 3. USE ALREADY SCALED DATA
 # =====================================================
 
-scaler = StandardScaler()
+# prepare_data.py has already scaled the data.
+# Do NOT scale it again.
 
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+X_train_scaled = X_train
+X_test_scaled = X_test
+
+# Check that the original scaler exists
+if not os.path.exists("models/scaler.pkl"):
+    raise FileNotFoundError(
+        "Scaler not found. Run prepare_data.py first."
+    )
+
+scaler = joblib.load("models/scaler.pkl")
+
+print("Preprocessed data loaded successfully.")
 
 # =====================================================
-# 4. TRAIN LOGISTIC REGRESSION
+# 4. TRAIN LOGISTIC REGRESSION MODEL
 # =====================================================
+
+print("\nTraining Logistic Regression model...")
 
 model = LogisticRegression(
-    penalty="l2",
     C=1.0,
     max_iter=1000,
     random_state=42
@@ -71,7 +94,12 @@ model.fit(X_train_scaled, y_train)
 
 y_prob = model.predict_proba(X_test_scaled)[:, 1]
 
-y_pred = (y_prob >= 0.5).astype(int)
+# Default evaluation threshold
+DEFAULT_THRESHOLD = 0.5
+
+y_pred = (
+    y_prob >= DEFAULT_THRESHOLD
+).astype(int)
 
 # =====================================================
 # 6. EVALUATION FUNCTION
@@ -122,7 +150,6 @@ def evaluate_model(y_true, predictions, probabilities):
         )
     }
 
-
 # =====================================================
 # 7. PRINT MODEL RESULTS
 # =====================================================
@@ -137,7 +164,6 @@ results = evaluate_model(
 
 for metric, value in results.items():
     print(f"{metric}: {value:.4f}")
-
 
 # =====================================================
 # 8. CONFUSION MATRIX
@@ -193,7 +219,6 @@ plt.savefig(
 
 plt.close()
 
-
 # =====================================================
 # 9. CLASSIFICATION REPORT
 # =====================================================
@@ -209,7 +234,6 @@ print(
     )
 )
 
-
 # =====================================================
 # 10. MODEL COEFFICIENTS
 # =====================================================
@@ -224,14 +248,13 @@ for feature, coefficient in zip(
 
 print("Intercept:", model.intercept_[0])
 
-
 # =====================================================
 # 11. THRESHOLD COMPARISON
 # =====================================================
 
-threshold_results = []
-
 print("\n========== THRESHOLD COMPARISON ==========")
+
+threshold_results = []
 
 for threshold in [0.3, 0.5, 0.7]:
 
@@ -255,7 +278,6 @@ for threshold in [0.3, 0.5, 0.7]:
     for metric, value in metrics.items():
         print(f"{metric}: {value:.4f}")
 
-
 threshold_df = pd.DataFrame(
     threshold_results
 )
@@ -264,7 +286,6 @@ threshold_df.to_csv(
     "outputs/threshold_comparison.csv",
     index=False
 )
-
 
 # =====================================================
 # 12. DECISION BEHAVIOUR GRAPH
@@ -296,9 +317,7 @@ plt.plot(
 plt.xlabel("Decision Threshold")
 plt.ylabel("Score")
 
-plt.title(
-    "Decision Behaviour at Different Thresholds"
-)
+plt.title("Decision Behaviour at Different Thresholds")
 
 plt.ylim(0, 1.05)
 
@@ -313,7 +332,6 @@ plt.savefig(
 )
 
 plt.close()
-
 
 # =====================================================
 # 13. MAJORITY CLASS BASELINE
@@ -344,7 +362,6 @@ print(
     accuracy_score(y_test, y_pred)
 )
 
-
 # =====================================================
 # 14. L1 VS L2 REGULARIZATION
 # =====================================================
@@ -356,8 +373,8 @@ regularization_results = []
 for penalty in ["l1", "l2"]:
 
     regularized_model = LogisticRegression(
-        penalty=penalty,
         solver="liblinear",
+        penalty=penalty,
         C=1.0,
         max_iter=1000,
         random_state=42
@@ -377,26 +394,24 @@ for penalty in ["l1", "l2"]:
         predictions
     )
 
+    nonzero = int(
+        np.count_nonzero(regularized_model.coef_)
+    )
+
     regularization_results.append({
         "Regularization": penalty.upper(),
         "Accuracy": score,
-        "Nonzero coefficients": int(
-            np.count_nonzero(
-                regularized_model.coef_
-            )
-        )
+        "Nonzero coefficients": nonzero
     })
 
     print(
-        penalty.upper(),
-        "Accuracy:",
-        round(score, 4),
-        "Nonzero coefficients:",
-        np.count_nonzero(
-            regularized_model.coef_
-        )
+        f"{penalty.upper()} Accuracy: {score:.4f}"
     )
 
+    print(
+        "Nonzero coefficients:",
+        nonzero
+    )
 
 pd.DataFrame(
     regularization_results
@@ -405,12 +420,11 @@ pd.DataFrame(
     index=False
 )
 
-
 # =====================================================
 # 15. ROC CURVE
 # =====================================================
 
-fpr, tpr, thresholds = roc_curve(
+fpr, tpr, roc_thresholds = roc_curve(
     y_test,
     y_prob
 )
@@ -445,7 +459,6 @@ plt.savefig(
 
 plt.close()
 
-
 # =====================================================
 # 16. SIGMOID CURVE
 # =====================================================
@@ -466,9 +479,7 @@ plt.axhline(
 plt.xlabel("Log-Odds (z)")
 plt.ylabel("Probability")
 
-plt.title(
-    "Logistic Regression Sigmoid Function"
-)
+plt.title("Logistic Regression Sigmoid Function")
 
 plt.tight_layout()
 
@@ -478,7 +489,6 @@ plt.savefig(
 )
 
 plt.close()
-
 
 # =====================================================
 # 17. SAVE MODEL EVALUATION METRICS
@@ -494,9 +504,8 @@ metrics_df.to_csv(
     index=False
 )
 
-
 # =====================================================
-# 18. SAVE TRAINED MODEL AND SCALER
+# 18. SAVE TRAINED MODEL
 # =====================================================
 
 joblib.dump(
@@ -504,11 +513,9 @@ joblib.dump(
     "models/logistic_model.pkl"
 )
 
-joblib.dump(
-    scaler,
-    "models/scaler.pkl"
-)
-
+# IMPORTANT:
+# Do not overwrite scaler.pkl here.
+# It was already saved by prepare_data.py.
 
 # =====================================================
 # 19. COMPLETION MESSAGE
@@ -525,7 +532,6 @@ print("Threshold comparison saved!")
 print("Regularization comparison saved!")
 
 print("Model saved successfully!")
-print("Scaler saved successfully!")
+print("Original preprocessing scaler preserved!")
 
 print("\nMODEL TRAINING COMPLETED!")
-    
